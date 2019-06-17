@@ -1,0 +1,68 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  sam-app
+
+  Sample SAM Template for sam-app
+
+# More info about Globals: https://github.com/awslabs/serverless-application-model/blob/master/docs/globals.rst
+Globals:
+  Function:
+    Timeout: 20
+    Environment: # More info about Env Vars: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#environment-object
+      Variables:
+        INDEX_NAME: plans
+        ES_HOST: "vpc-personal-capital-plans-goi2vse4zllq7m7hp7dzpm6ejm.us-west-2.es.amazonaws.com"
+        ES_PORT: 443
+        ES_PROTOCOL: https
+
+Resources:
+  FindByPlanName:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: target/personal-capital-1.0.0.jar
+      Runtime: java8
+      Handler: pro.anuj.challenge.pc.api.PlanNameSearchHandler::handleRequest
+      Events:
+        findByPlanName:
+          Type: Api
+          Properties:
+            Path: /plans/findByPlanName
+            Method: get
+  FindBySponsorName:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: target/personal-capital-1.0.0.jar
+      Runtime: java8
+      Handler: pro.anuj.challenge.pc.api.SponsorNameSearchHandler::handleRequest
+      Events:
+        findBySponsorName:
+          Type: Api
+          Properties:
+            Path: /plans/findBySponsorName
+            Method: get
+  FindBySponsorState:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: target/personal-capital-1.0.0.jar
+      Runtime: java8
+      Handler: pro.anuj.challenge.pc.api.SponsorStateSearchHandler::handleRequest
+      Events:
+        findBySponsorState:
+          Type: Api
+          Properties:
+            Path: /plans/findBySponsorState
+            Method: get
+
+Outputs:
+  Api:
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod"
+
+  FindByPlanNameFunction:
+    Value: !GetAtt FindByPlanName.Arn
+
+  FindBySponsorNameFunction:
+    Value: !GetAtt FindBySponsorName.Arn
+
+  FindBySponsorStateFunction:
+    Value: !GetAtt FindBySponsorState.Arn
