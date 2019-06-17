@@ -1,0 +1,58 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description:
+
+Parameters:
+  KeyPairName:
+    Type: String
+  AvailabilityZones:
+    Type: List<AWS::EC2::AvailabilityZone::Name>
+
+Resources:
+  SubStrate:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub 'https://TEMPLATE_BUCKET_NAME.s3.amazonaws.com/TEMPLATE_OBJECT_PREFIX/substrate.yaml'
+      Parameters:
+        AvailabilityZones: !Join
+          - ','
+          - !Ref 'AvailabilityZones'
+        KeyPairName: !Ref 'KeyPairName'
+        NumberOfAZs: '2'
+  Bastion:
+    Type: AWS::CloudFormation::Stack
+    DependsOn:
+      - SubStrate
+    Properties:
+      TemplateURL: '!Sub https://TEMPLATE_BUCKET_NAME.s3.amazonaws.com/TEMPLATE_OBJECT_PREFIX/bastion.yaml'
+      Parameters:
+        KeyPairName: !Ref 'KeyPairName'
+        VpcId: !GetAtt 'SubStrate.Outputs.VPC'
+        PublicSubnet1Id: !GetAtt 'SubStrate.Outputs.PublicSubnet1ID'
+        PublicSubnet2Id: !GetAtt 'SubStrate.Outputs.PublicSubnet2ID'
+
+  S3:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: '!Sub https://TEMPLATE_BUCKET_NAME.s3.amazonaws.com/TEMPLATE_OBJECT_PREFIX/s3.yaml'
+  IAM:
+    Type: AWS::CloudFormation::Stack
+    DependsOn:
+      - S3
+    Properties:
+      TemplateURL: '!Sub https://TEMPLATE_BUCKET_NAME.s3.amazonaws.com/TEMPLATE_OBJECT_PREFIX/iam.yaml'
+      Parameters:
+        InBoundBucketArn: !GetAtt 'S3.Outputs.InBoundBucketArn'
+#  ElasticSearch:
+#    Type: AWS::CloudFormation::Stack
+#    DependsOn:
+#      - SubStrate
+#      - S3
+#      - IAM
+#    Properties:
+#      TemplateURL: '!Sub https://TEMPLATE_BUCKET_NAME.s3.amazonaws.com/TEMPLATE_OBJECT_PREFIX/elastic-search.yaml'
+#  Logstash:
+#    Type: AWS::CloudFormation::Stack
+#    DependsOn:
+#      - ElasticSearch
+#    Properties:
+#      TemplateURL: '!Sub https://TEMPLATE_BUCKET_NAME.s3.amazonaws.com/TEMPLATE_OBJECT_PREFIX/logstash.yaml'

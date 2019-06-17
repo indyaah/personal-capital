@@ -1,0 +1,458 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: CloudFormation Stack to provision compute environment for adhoc ingestion of data from S3 to ES.
+
+Parameters:
+  NameSpace:
+    Type: String
+    Default: PersonalCapital
+  DomainName:
+    Type: String
+    Default: "personal-capital-plans"
+    Description: Domain name for ES service
+  VpcId:
+    Type: String
+    Description: VPC ID
+  BastionSecurityGroup:
+    Type: String
+    Description: Security Group for bastion ASG
+  LogstashHostRoleArn:
+    Type: String
+    Description: ARN of Losgstash Host (for ES access)
+  PrivateSubnet1Id:
+    Type: String
+    Description: Private Subnet 1 Id
+  PrivateSubnet2Id:
+    Type: String
+    Description: Private Subnet 2 Id
+Resources:
+
+  ElasticSearchSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Elastic Search Security Group
+      VpcId: !Ref 'VpcId'
+
+  EgressSecurityGroup:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties:
+      GroupId: !Ref 'ElasticSearchSecurityGroup'
+      IpProtocol: tcp
+      FromPort: 0
+      ToPort: 65535
+      CidrIp: 0.0.0.0/0
+
+  IngressSecurityGroup:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref 'ElasticSearchSecurityGroup'
+      IpProtocol: tcp
+      FromPort: 0
+      ToPort: 65535
+      SourceSecurityGroupId: !Ref 'ElasticSearchSecurityGroup'
+
+  BastionIngressGroup:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref 'ElasticSearchSecurityGroup'
+      IpProtocol: tcp
+      FromPort: 0
+      ToPort: 65535
+      SourceSecurityGroupId: !Ref 'BastionSecurityGroup'
+
+  ElasticSearchDomain:
+    Type: "AWS::Elasticsearch::Domain"
+    Properties:
+      DomainName: !Ref 'DomainName'
+      ElasticsearchVersion: "6.7"
+      ElasticsearchClusterConfig:
+        DedicatedMasterCount: 3
+        DedicatedMasterEnabled: true
+        DedicatedMasterType: "r5.large.elasticsearch"
+        InstanceCount: 2
+        InstanceType: "r5.large.elasticsearch"
+        ZoneAwarenessEnabled: true
+      AccessPolicies:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              AWS: !Sub "arn:aws:iam::${AWS::AccountId}:root"
+            Action: "es:*"
+            Resource: !Sub "arn:aws:es:${AWS::Region}:${AWS::AccountId}:domain/${DomainName}/*"
+          - Effect: "Allow"
+            Principal:
+              AWS: !Ref 'LogstashHostRoleArn'
+            Action: "es:*"
+            Resource: !Sub "arn:aws:es:${AWS::Region}:${AWS::AccountId}:domain/${DomainName}/*"
+      SnapshotOptions:
+        AutomatedSnapshotStartHour: 0
+      NodeToNodeEncryptionOptions:
+        Enabled: true
+      AdvancedOptions:
+        rest.action.multi.allow_explicit_index: "true"
+      EBSOptions:
+        EBSEnabled: true
+        VolumeType: "gp2"
+        VolumeSize: 10
+      VPCOptions:
+        SecurityGroupIds:
+          - !Ref 'ElasticSearchSecurityGroup'
+        SubnetIds:
+          - !Ref 'PrivateSubnet1Id'
+          - !Ref 'PrivateSubnet2Id'
+  StatusYellowAlarm:
+    Type: 'AWS::CloudWatch::Alarm'
+    Properties:
+      AlarmActions:
+        - !Ref 'Topic'
+      AlarmDescription: 'Replica shards for at least one index are not allocated to nodes in a cluster.'
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: ClientId
+          Value: !Ref 'AWS::AccountId'
+        - Name: DomainName
+          Value: !Ref 'ElasticSearchDomain'
+      EvaluationPeriods: 1
+      MetricName: 'ClusterStatus.yellow'
+      Namespace: 'AWS/ES'
+      OKActions:
+        - !Ref 'Topic'
+      Period: 60
+      Statistic: Maximum
+      Threshold: 0
+  StatusRedAlarm:
+    Type: 'AWS::CloudWatch::Alarm'
+    Properties:
+      AlarmActions:
+        - !Ref 'Topic'
+      AlarmDescription: 'Primary and replica shards of at least one index are not allocated to nodes in a cluster.'
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: ClientId
+          Value: !Ref 'AWS::AccountId'
+        - Name: DomainName
+          Value: !Ref 'ElasticSearchDomain'
+      EvaluationPeriods: 1
+      MetricName: 'ClusterStatus.red'
+      Namespace: 'AWS/ES'
+      OKActions:
+        - !Ref 'Topic'
+      Period: 60
+      Statistic: Maximum
+      Threshold: 0
+  CPUUtilizationTooHighAlarm:
+    Type: 'AWS::CloudWatch::Alarm'
+    Properties:
+      AlarmActions:
+        - !Ref 'Topic'
+      AlarmDescription: 'Average CPU utilization over last 10 minutes too high.'
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: ClientId
+          Value: !Ref 'AWS::AccountId'
+        - Name: DomainName
+          Value: !Ref 'ElasticSearchDomain'
+      EvaluationPeriods: 1
+      MetricName: 'CPUUtilization'
+      Namespace: 'AWS/ES'
+      OKActions:
+        - !Ref 'Topic'
+      Period: 600
+      Statistic: Average
+      Threshold: 80
+  CPUCreditBalanceTooLowAlarm:
+    Type: 'AWS::CloudWatch::Alarm'
+    Properties:
+      AlarmActions:
+        - !Ref 'Topic'
+      AlarmDescription: 'Average CPU credit balance over last 10 minutes too low, expect a significant performance drop soon.'
+      ComparisonOperator: LessThanThreshold
+      Dimensions:
+        - Name: ClientId
+          Value: !Ref 'AWS::AccountId'
+        - Name: DomainName
+          Value: !Ref 'ElasticSearchDomain'
+      EvaluationPeriods: 1
+      MetricName: CPUCreditBalance
+      Namespace: 'AWS/ES'
+      OKActions:
+        - !Ref 'Topic'
+      Period: 600
+      Statistic: Average
+      Threshold: 20
+  MasterCPUUtilizationTooHighAlarm:
+    Type: 'AWS::CloudWatch::Alarm'
+    Properties:
+      AlarmActions:
+        - !Ref 'Topic'
+      AlarmDescription: 'Average CPU utilization over last 10 minutes too high.'
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: ClientId
+          Value: !Ref 'AWS::AccountId'
+        - Name: DomainName
+          Value: !Ref 'ElasticSearchDomain'
+      EvaluationPeriods: 1
+      MetricName: 'MasterCPUUtilization'
+      Namespace: 'AWS/ES'
+      OKActions:
+        - !Ref 'Topic'
+      Period: 600
+      Statistic: Average
+      Threshold: 50
+  MasterCPUCreditBalanceTooLowAlarm:
+    Type: 'AWS::CloudWatch::Alarm'
+    Properties:
+      AlarmActions:
+        - !Ref 'Topic'
+      AlarmDescription: 'Average CPU credit balance over last 10 minutes too low, expect a significant performance drop soon.'
+      ComparisonOperator: LessThanThreshold
+      Dimensions:
+        - Name: ClientId
+          Value: !Ref 'AWS::AccountId'
+        - Name: DomainName
+          Value: !Ref 'ElasticSearchDomain'
+      EvaluationPeriods: 1
+      MetricName: MasterCPUCreditBalance
+      Namespace: 'AWS/ES'
+      OKActions:
+        - !Ref 'Topic'
+      Period: 600
+      Statistic: Average
+      Threshold: 20
+  FreeStorageSpaceTooLowAlarm:
+
+    Type: 'AWS::CloudWatch::Alarm'
+    Properties:
+      AlarmActions:
+        - !Ref 'Topic'
+      AlarmDescription: 'Cluster is running out of storage space.'
+      ComparisonOperator: LessThanThreshold
+      Dimensions:
+        - Name: ClientId
+          Value: !Ref 'AWS::AccountId'
+        - Name: DomainName
+          Value: !Ref 'ElasticSearchDomain'
+      EvaluationPeriods: 1
+      MetricName: 'FreeStorageSpace'
+      Namespace: 'AWS/ES'
+      OKActions:
+        - !Ref 'Topic'
+      Period: 60
+      Statistic: Minimum
+      Threshold: 2000 # 2 Gigabyte in Megabyte
+  IndexWritesBlockedTooHighAlarm:
+    Type: 'AWS::CloudWatch::Alarm'
+    Properties:
+      AlarmActions:
+        - !Ref 'Topic'
+      AlarmDescription: 'Cluster is blocking incoming write requests.'
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: ClientId
+          Value: !Ref 'AWS::AccountId'
+        - Name: DomainName
+          Value: !Ref 'ElasticSearchDomain'
+      EvaluationPeriods: 1
+      MetricName: 'ClusterIndexWritesBlocked'
+      Namespace: 'AWS/ES'
+      OKActions:
+        - !Ref 'Topic'
+      Period: 60
+      Statistic: Maximum
+      Threshold: 0
+  JVMMemoryPressureTooHighAlarm:
+
+    Type: 'AWS::CloudWatch::Alarm'
+    Properties:
+      AlarmActions:
+        - !Ref 'Topic'
+      AlarmDescription: 'Average JVM memory pressure over last 10 minutes too high.'
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: ClientId
+          Value: !Ref 'AWS::AccountId'
+        - Name: DomainName
+          Value: !Ref 'ElasticSearchDomain'
+      EvaluationPeriods: 1
+      MetricName: 'JVMMemoryPressure'
+      Namespace: 'AWS/ES'
+      OKActions:
+        - !Ref 'Topic'
+      Period: 600
+      Statistic: Average
+      Threshold: 80
+  MasterJVMMemoryPressureTooHighAlarm:
+
+    Type: 'AWS::CloudWatch::Alarm'
+    Properties:
+      AlarmActions:
+        - !Ref 'Topic'
+      AlarmDescription: 'Average JVM memory pressure over last 10 minutes too high.'
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: ClientId
+          Value: !Ref 'AWS::AccountId'
+        - Name: DomainName
+          Value: !Ref 'ElasticSearchDomain'
+      EvaluationPeriods: 1
+      MetricName: 'MasterJVMMemoryPressure'
+      Namespace: 'AWS/ES'
+      OKActions:
+        - !Ref 'Topic'
+      Period: 600
+      Statistic: Average
+      Threshold: 80
+  MasterNotReachableFromNodeAlarm:
+    Type: 'AWS::CloudWatch::Alarm'
+    Properties:
+      AlarmActions:
+        - !Ref 'Topic'
+      AlarmDescription: 'Master node stopped or not reachable. Usually the result of a network connectivity issue or AWS dependency problem.'
+      ComparisonOperator: LessThanThreshold
+      Dimensions:
+        - Name: ClientId
+          Value: !Ref 'AWS::AccountId'
+        - Name: DomainName
+          Value: !Ref 'ElasticSearchDomain'
+      EvaluationPeriods: 1
+      MetricName: 'MasterReachableFromNode'
+      Namespace: 'AWS/ES'
+      OKActions:
+        - !Ref 'Topic'
+      Period: 60
+      Statistic: Minimum
+      Threshold: 1
+  AutomatedSnapshotFailureTooHighAlarm:
+    Type: 'AWS::CloudWatch::Alarm'
+    Properties:
+      AlarmActions:
+        - !Ref 'Topic'
+      AlarmDescription: 'No automated snapshot was taken for the domain in the previous 36 hours.'
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: ClientId
+          Value: !Ref 'AWS::AccountId'
+        - Name: DomainName
+          Value: !Ref 'ElasticSearchDomain'
+      EvaluationPeriods: 1
+      MetricName: 'AutomatedSnapshotFailure'
+      Namespace: 'AWS/ES'
+      OKActions:
+        - !Ref 'Topic'
+      Period: 60
+      Statistic: Maximum
+      Threshold: 0
+  KibanaHealthyNodesTooLowAlarm:
+    Type: 'AWS::CloudWatch::Alarm'
+    Properties:
+      AlarmActions:
+        - !Ref 'Topic'
+      AlarmDescription: 'Kibana is inaccessible.'
+      ComparisonOperator: LessThanThreshold
+      Dimensions:
+        - Name: ClientId
+          Value: !Ref 'AWS::AccountId'
+        - Name: DomainName
+          Value: !Ref 'ElasticSearchDomain'
+      EvaluationPeriods: 1
+      MetricName: 'KibanaHealthyNodes'
+      Namespace: 'AWS/ES'
+      OKActions:
+        - !Ref 'Topic'
+      Period: 60
+      Statistic: Minimum
+      Threshold: 1
+
+  KMSKeyErrorAlarm:
+    Type: 'AWS::CloudWatch::Alarm'
+    Properties:
+      AlarmActions:
+        - !Ref 'Topic'
+      AlarmDescription: 'KMS customer master key used to encrypt data at rest has been disabled.'
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: ClientId
+          Value: !Ref 'AWS::AccountId'
+        - Name: DomainName
+          Value: !Ref 'ElasticSearchDomain'
+      EvaluationPeriods: 1
+      MetricName: 'KMSKeyError'
+      Namespace: 'AWS/ES'
+      OKActions:
+        - !Ref 'Topic'
+      Period: 60
+      Statistic: Maximum
+      Threshold: 0
+
+  KMSKeyInaccessibleAlarm:
+    Type: 'AWS::CloudWatch::Alarm'
+    Properties:
+      AlarmActions:
+        - !Ref 'Topic'
+      AlarmDescription: 'KMS customer master key used to encrypt data at rest has been deleted or revoked its grants to Amazon ES.'
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: ClientId
+          Value: !Ref 'AWS::AccountId'
+        - Name: DomainName
+          Value: !Ref 'ElasticSearchDomain'
+      EvaluationPeriods: 1
+      MetricName: 'KMSKeyInaccessible'
+      Namespace: 'AWS/ES'
+      OKActions:
+        - !Ref 'Topic'
+      Period: 60
+      Statistic: Maximum
+      Threshold: 0
+  Topic:
+    Type: 'AWS::SNS::Topic'
+    Properties: {}
+  TopicPolicy:
+    Type: 'AWS::SNS::TopicPolicy'
+    Properties:
+      PolicyDocument:
+        Id: Id1
+        Version: '2012-10-17'
+        Statement:
+          - Sid: Sid1
+            Effect: Allow
+            Principal:
+              Service:
+                - 'events.amazonaws.com'
+                - 'budgets.amazonaws.com'
+                - 'rds.amazonaws.com'
+                - 's3.amazonaws.com'
+            Action: 'sns:Publish'
+            Resource: !Ref 'Topic'
+          - Sid: Sid2
+            Effect: Allow
+            Principal:
+              AWS: '*'
+            Action: 'sns:Publish'
+            Resource: !Ref 'Topic'
+            Condition:
+              StringEquals:
+                'AWS:SourceOwner': !Ref 'AWS::AccountId'
+          - Sid: Sid3
+            Effect: Allow
+            Principal:
+              Service: 'ses.amazonaws.com'
+            Action: 'sns:Publish'
+            Resource: !Ref 'Topic'
+            Condition:
+              StringEquals:
+                'AWS:Referer': !Ref 'AWS::AccountId'
+      Topics:
+        - !Ref 'Topic'
+
+Outputs:
+  ElasticSearchHost:
+    Value: !GetAtt ElasticSearchDomain.DomainEndpoint
+    Export:
+      Name: !Join [ ":", [ "ElasticSearch", !Ref "NameSpace", "Domain", "Endpoint"] ]
+  ElasticSearchSecurityGroup:
+    Description: ElasticSearch Security Group ID
+    Value: !Ref 'ElasticSearchSecurityGroup'
+    Export:
+      Name: !Join [ ":", [ "ElasticSearch", !Ref "NameSpace", "SecurityGroup"] ]

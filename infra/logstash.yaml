@@ -1,0 +1,239 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Quick start based logstash node template
+Parameters:
+  NameSpace:
+    Type: String
+    Default: 'PersonalCapital'
+  KeyPairName:
+    Description: Enter a Public/private key pair. If you do not have one in this region, please create it before continuing
+    Type: AWS::EC2::KeyPair::KeyName
+  VpcId:
+    Type: String
+    Description: VPC ID
+  LogstashHostProfileArn:
+    Type: String
+    Description: ARN of Losgstash Host Instance Profile (for ES access)
+  PrivateSubnet1Id:
+    Type: String
+    Description: Private Subnet 1 Id
+  BastionSecurityGroup:
+    Type: String
+    Description: Security Group for bastion ASG
+  ElasticSearchSecurityGroup:
+    Type: String
+    Description: Security Group for ElasticSearch
+Mappings:
+  AWSAMIRegionMap:
+    us-east-1:
+      AMZNLINUXHVM: ami-0080e4c5bc078760e
+    us-east-2:
+      AMZNLINUXHVM: ami-0cd3dfa4e37921605
+    us-west-1:
+      AMZNLINUXHVM: ami-0ec6517f6edbf8044
+    us-west-2:
+      AMZNLINUXHVM: ami-01e24be29428c15b2
+Resources:
+  LogstashAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      LaunchConfigurationName: !Ref 'LogstashLaunchConfiguration'
+      VPCZoneIdentifier:
+        - !Ref PrivateSubnet1Id
+      MinSize: 1
+      MaxSize: 1
+      Cooldown: '300'
+      DesiredCapacity: 1
+    CreationPolicy:
+      ResourceSignal:
+        Count: 1
+        Timeout: PT30M
+    UpdatePolicy:
+      AutoScalingRollingUpdate:
+        MaxBatchSize: 1
+        WaitOnResourceSignals: true
+  LogstashLaunchConfiguration:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Metadata:
+      AWS::CloudFormation::Init:
+        configSets:
+          default:
+            - "ConfigureYum"
+            - "InstallPackage"
+            - "SetupLogstashService"
+            - "WriteConfigFiles"
+            - "Start"
+        Start:
+          commands:
+            stop_logstash:
+              command: initctl stop logstash
+              ignoreErrors: true
+            stop_startstash:
+              command: initctl stop logstash
+              ignoreErrors: true
+        SetupLogstashService:
+          setup_log_stash:
+            command: /usr/share/logstash/bin/system-install
+          setup_logs_stash_plugin:
+            command: sudo -E /usr/share/logstash/bin/logstash-plugin install logstash-output-amazon_es
+        ConfigureYum:
+          files:
+            /etc/yum.repos.d/logstash.repo:
+              content: |
+                [logstash-6.x]
+                name=Elastic repository for 6.x packages
+                baseurl=https://artifacts.elastic.co/packages/6.x/yum
+                gpgcheck=1
+                gpgkey=https://artifacts.elastic.co/GPG-KEY-elasticsearch
+                enabled=1
+                autorefresh=1
+                type=rpm-md
+              mode: '000644'
+              owner: root
+              group: root
+        InstallPackage:
+          packages:
+            yum:
+              java-1.8.0-openjdk: []
+              logstash: []
+
+        WriteConfigFiles:
+          files:
+            /etc/logstash/conf.d/logstash.conf:
+              content:
+                Fn::Join:
+                  - ''
+                  - - "input {\n"
+                    - "    s3 {\n"
+                    - "      \"bucket\" => \""
+                    - !Ref 'InBoundName'
+                    - "\"\n"
+                    - "    }\n"
+                    - " }\n"
+                    - "  filter {\n"
+                    - "    csv {\n"
+                    - "      separator => \",\"\n"
+                    - "      columns => [\"ACK_ID\",\"FORM_PLAN_YEAR_BEGIN_DATE\",\"FORM_TAX_PRD\",\"TYPE_PLAN_ENTITY_CD\",\"TYPE_DFE_PLAN_ENTITY_CD\",\"INITIAL_FILING_IND\",\"AMENDED_IND\",\"FINAL_FILING_IND\",\"SHORT_PLAN_YR_IND\",\"COLLECTIVE_BARGAIN_IND\",\"F5558_APPLICATION_FILED_IND\",\"EXT_AUTOMATIC_IND\",\"DFVC_PROGRAM_IND\",\"EXT_SPECIAL_IND\",\"EXT_SPECIAL_TEXT\",\"PLAN_NAME\",\"SPONS_DFE_PN\",\"PLAN_EFF_DATE\",\"SPONSOR_DFE_NAME\",\"SPONS_DFE_DBA_NAME\",\"SPONS_DFE_CARE_OF_NAME\",\"SPONS_DFE_MAIL_US_ADDRESS1\",\"SPONS_DFE_MAIL_US_ADDRESS2\",\"SPONS_DFE_MAIL_US_CITY\",\"SPONS_DFE_MAIL_US_STATE\",\"SPONS_DFE_MAIL_US_ZIP\",\"SPONS_DFE_MAIL_FOREIGN_ADDR1\",\"SPONS_DFE_MAIL_FOREIGN_ADDR2\",\"SPONS_DFE_MAIL_FOREIGN_CITY\",\"SPONS_DFE_MAIL_FORGN_PROV_ST\",\"SPONS_DFE_MAIL_FOREIGN_CNTRY\",\"SPONS_DFE_MAIL_FORGN_POSTAL_CD\",\"SPONS_DFE_LOC_US_ADDRESS1\",\"SPONS_DFE_LOC_US_ADDRESS2\",\"SPONS_DFE_LOC_US_CITY\",\"SPONS_DFE_LOC_US_STATE\",\"SPONS_DFE_LOC_US_ZIP\",\"SPONS_DFE_LOC_FOREIGN_ADDRESS1\",\"SPONS_DFE_LOC_FOREIGN_ADDRESS2\",\"SPONS_DFE_LOC_FOREIGN_CITY\",\"SPONS_DFE_LOC_FORGN_PROV_ST\",\"SPONS_DFE_LOC_FOREIGN_CNTRY\",\"SPONS_DFE_LOC_FORGN_POSTAL_CD\",\"SPONS_DFE_EIN\",\"SPONS_DFE_PHONE_NUM\",\"BUSINESS_CODE\",\"ADMIN_NAME\",\"ADMIN_CARE_OF_NAME\",\"ADMIN_US_ADDRESS1\",\"ADMIN_US_ADDRESS2\",\"ADMIN_US_CITY\",\"ADMIN_US_STATE\",\"ADMIN_US_ZIP\",\"ADMIN_FOREIGN_ADDRESS1\",\"ADMIN_FOREIGN_ADDRESS2\",\"ADMIN_FOREIGN_CITY\",\"ADMIN_FOREIGN_PROV_STATE\",\"ADMIN_FOREIGN_CNTRY\",\"ADMIN_FOREIGN_POSTAL_CD\",\"ADMIN_EIN\",\"ADMIN_PHONE_NUM\",\"LAST_RPT_SPONS_NAME\",\"LAST_RPT_SPONS_EIN\",\"LAST_RPT_PLAN_NUM\",\"ADMIN_SIGNED_DATE\",\"ADMIN_SIGNED_NAME\",\"SPONS_SIGNED_DATE\",\"SPONS_SIGNED_NAME\",\"DFE_SIGNED_DATE\",\"DFE_SIGNED_NAME\",\"TOT_PARTCP_BOY_CNT\",\"TOT_ACTIVE_PARTCP_CNT\",\"RTD_SEP_PARTCP_RCVG_CNT\",\"RTD_SEP_PARTCP_FUT_CNT\",\"SUBTL_ACT_RTD_SEP_CNT\",\"BENEF_RCVG_BNFT_CNT\",\"TOT_ACT_RTD_SEP_BENEF_CNT\",\"PARTCP_ACCOUNT_BAL_CNT\",\"SEP_PARTCP_PARTL_VSTD_CNT\",\"CONTRIB_EMPLRS_CNT\",\"TYPE_PENSION_BNFT_CODE\",\"TYPE_WELFARE_BNFT_CODE\",\"FUNDING_INSURANCE_IND\",\"FUNDING_SEC412_IND\",\"FUNDING_TRUST_IND\",\"FUNDING_GEN_ASSET_IND\",\"BENEFIT_INSURANCE_IND\",\"BENEFIT_SEC412_IND\",\"BENEFIT_TRUST_IND\",\"BENEFIT_GEN_ASSET_IND\",\"SCH_R_ATTACHED_IND\",\"SCH_MB_ATTACHED_IND\",\"SCH_SB_ATTACHED_IND\",\"SCH_H_ATTACHED_IND\",\"SCH_I_ATTACHED_IND\",\"SCH_A_ATTACHED_IND\",\"NUM_SCH_A_ATTACHED_CNT\",\"SCH_C_ATTACHED_IND\",\"SCH_D_ATTACHED_IND\",\"SCH_G_ATTACHED_IND\",\"FILING_STATUS\",\"DATE_RECEIVED\",\"VALID_ADMIN_SIGNATURE\",\"VALID_DFE_SIGNATURE\",\"VALID_SPONSOR_SIGNATURE\",\"ADMIN_PHONE_NUM_FOREIGN\",\"SPONS_DFE_PHONE_NUM_FOREIGN\",\"ADMIN_NAME_SAME_SPON_IND\",\"ADMIN_ADDRESS_SAME_SPON_IND\",\"PREPARER_NAME\",\"PREPARER_FIRM_NAME\",\"PREPARER_US_ADDRESS1\",\"PREPARER_US_ADDRESS2\",\"PREPARER_US_CITY\",\"PREPARER_US_STATE\",\"PREPARER_US_ZIP\",\"PREPARER_FOREIGN_ADDRESS1\",\"PREPARER_FOREIGN_ADDRESS2\",\"PREPARER_FOREIGN_CITY\",\"PREPARER_FOREIGN_PROV_STATE\",\"PREPARER_FOREIGN_CNTRY\",\"PREPARER_FOREIGN_POSTAL_CD\",\"PREPARER_PHONE_NUM\",\"PREPARER_PHONE_NUM_FOREIGN\",\"TOT_ACT_PARTCP_BOY_CNT\",\"SUBJ_M1_FILING_REQ_IND\",\"COMPLIANCE_M1_FILING_REQ_IND\",\"M1_RECEIPT_CONFIRMATION_CODE\",\"ADMIN_MANUAL_SIGNED_DATE\",\"ADMIN_MANUAL_SIGNED_NAME\"]\n"
+                    - "    }\n"
+                    - "  }\n"
+                    - "  output {\n"
+                    - "    amazon_es {\n"
+                    - "     hosts => [\""
+                    - !Ref 'ElasticSearchDomainEndpoint'
+                    - "\"]\n"
+                    - "     protocol => \"https\"\n"
+                    - "     region => \""
+                    - !Ref 'AWS::Region'
+                    - "\"\n"
+                    - "     index => \"plans\"\n"
+                    - "   }\n"
+                    - "  }\n"
+              mode: '640'
+              owner: logstash
+              group: root
+            /etc/cfn/cfn-hup.conf:
+              content: !Join
+                - ''
+                - - "[main]\n"
+                  - "stack="
+                  - !Ref 'AWS::StackId'
+                  - "\n"
+                  - "region="
+                  - !Ref 'AWS::Region'
+                  - "\n"
+                  - "interval=5\n"
+                  - "verbose=true\n"
+              mode: '000400'
+              owner: root
+              group: root
+            /etc/cfn/hooks.d/cfn-auto-reloader.conf:
+              content: !Join
+                - ''
+                - - "[cfn-auto-reloader-hook]\n"
+                  - "triggers=post.update\n"
+                  - "path=Resources.LogstashLaunchConfiguration.Metadata.AWS::CloudFormation::Init\n"
+                  - 'action=/usr/local/bin/cfn-init -s '
+                  - !Ref 'AWS::StackId'
+                  - ' -r LogstashLaunchConfiguration --region '
+                  - !Ref 'AWS::Region'
+                  - "\n"
+                  - "runas=root\n"
+
+
+    Properties:
+      AssociatePublicIpAddress: false
+      KeyName: !Ref 'KeyPairName'
+      IamInstanceProfile: !Ref 'LogstashHostProfileArn'
+      ImageId:  !FindInMap
+        - AWSAMIRegionMap
+        - !Ref 'AWS::Region'
+        - 'AMZNLINUXHVM'
+      SecurityGroups:
+        - !Ref 'LogstashSecurityGroup'
+      InstanceType: c5.xlarge
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeSize: 20
+            VolumeType: gp2
+            DeleteOnTermination: true
+      UserData: !Base64
+        Fn::Join:
+          - ''
+          - - "#!/bin/bash\n"
+            - "set -x\n"
+            - "export PATH=$PATH:/usr/local/bin\n"
+            - "yum remove -y java-1.7.0-openjdk\n"
+            - "yum install -y python-pip\n"
+            - "pip install --upgrade pip &> /dev/null\n"
+            - "pip install awscli --ignore-installed six &> /dev/null\n"
+            - "easy_install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz\n"
+            - 'cfn-init -v --stack '
+            - !Ref 'AWS::StackName'
+            - ' --resource LogstashLaunchConfiguration --region '
+            - !Ref 'AWS::Region'
+            - "\n"
+            - "cfn-hup || error_exit 'Failed to start cfn-hup'\n"
+            - 'cfn-signal -e $? --stack '
+            - !Ref 'AWS::StackName'
+            - ' --resource LogstashAutoScalingGroup --region '
+            - !Ref 'AWS::Region'
+            - "\n"
+  LogstashSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Enables SSH Access to Logstash Hosts
+      VpcId: !Ref 'VpcId'
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          SecurityGroupId: !Ref 'BastionSecurityGroup'
+        - IpProtocol: icmp
+          FromPort: -1
+          ToPort: -1
+          CidrIp: 0.0.0.0/0
+  IngressSecurityGroup:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref 'ElasticSearchSecurityGroup'
+      IpProtocol: tcp
+      FromPort: 0
+      ToPort: 65535
+      SourceSecurityGroupId: !Ref 'LogstashSecurityGroup'
+
+
+Outputs:
+  LogstashAutoScalingGroup:
+    Description: Auto Scaling Group Reference ID
+    Value: !Ref 'LogstashAutoScalingGroup'
+    Export:
+      Name: !Join [ ":", [ "Logstash", !Ref "NameSpace", "LogstashAutoScalingGroup"] ]
+  LogstashSecurityGroupID:
+    Description: Logstash Security Group ID
+    Value: !Ref 'LogstashSecurityGroup'
+    Export:
+      Name: !Join [ ":", [ "Logstash", !Ref "NameSpace", "LogstashSecurityGroup"] ]

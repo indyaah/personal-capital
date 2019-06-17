@@ -1,0 +1,81 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: CloudFormation Stack to provision IAM roles for adhoc ingestion of data from S3 to ES.
+
+Parameters:
+  NameSpace:
+    Type: String
+    Description: An environment name that will be prefixed to resource names
+    Default: PersonalCapital
+  InBoundBucketArn:
+    Type: String
+    Description: Bucket where the files would appear for ingestion
+Resources:
+
+  LogstashHostRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Path: /
+      Policies:
+        - PolicyName: !Join
+            - "-"
+            - - !Ref 'AWS::StackName'
+              - !Ref 'NameSpace'
+              - !Ref 'AWS::Region'
+              - 'logstash-s3-buckets'
+              - 'access-policy'
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Deny
+                Resource: !Ref 'InBoundBucketArn'
+                Action:
+                  - "s3:Delete*"
+                  - "s3:PutBucket*"
+              - Effect: Allow
+                Resource: !Ref 'InBoundBucketArn'
+                Action:
+                  - "s3:ListBucket*"
+              - Effect: Allow
+                Resource:
+                  Fn::Join:
+                    - ""
+                    - - !Ref 'InBoundBucketArn'
+                      - "/*"
+                Action:
+                  - "s3:*"
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action:
+              - sts:AssumeRole
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Effect: Allow
+        Version: '2012-10-17'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforSSM
+  LogstashHostProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref 'LogstashHostRole'
+      Path: /
+
+Outputs:
+  BatchJobRoleName:
+  LogstashHostRoleName:
+    Value: !Ref 'LogstashHostRole'
+    Export:
+      Name: !Join [ ":", [ "IAM", !Ref "NameSpace", "LogstashHostRole", "Name"] ]
+  LogstashHostRoleArn:
+    Value: !GetAtt LogstashHostRole.Arn
+    Export:
+      Name: !Join [ ":", [ "IAM", !Ref "NameSpace", "LogstashHostRole", "Arn"] ]
+  LogstashHostProfileName:
+    Value: !Ref 'LogstashHostProfile'
+    Export:
+      Name: !Join [ ":", [ "IAM", !Ref "NameSpace", "LogstashHostProfile", "Name"] ]
+  LogstashHostProfileArn:
+    Value: !GetAtt LogstashHostProfile.Arn
+    Export:
+      Name: !Join [ ":", [ "IAM", !Ref "NameSpace", "LogstashHostProfile", "Arn"] ]

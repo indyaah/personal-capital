@@ -1,0 +1,76 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: CloudFormation Stack to provision s3 buckets for adhoc ingestion of data via batch jobs.
+
+Parameters:
+  NameSpace:
+    Description: Name space to keep resources isolated
+    Type: String
+    Default: PersonalCapital
+Resources:
+  InBoundBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        IgnorePublicAcls: true
+        BlockPublicPolicy: true
+        RestrictPublicBuckets: true
+
+  IntermediateBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        IgnorePublicAcls: true
+        BlockPublicPolicy: true
+        RestrictPublicBuckets: true
+
+  SamResourcesBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        IgnorePublicAcls: true
+        BlockPublicPolicy: true
+        RestrictPublicBuckets: true
+
+Outputs:
+  IntermediateBucketArn:
+    Value: !GetAtt IntermediateBucket.Arn
+    Export:
+      Name: !Join [ ":", [ "S3", !Ref "NameSpace", "Intermediate", "Arn" ] ]
+  InBoundBucketArn:
+    Value: !GetAtt InBoundBucket.Arn
+    Export:
+      Name: !Join [ ":", [ "S3", !Ref "NameSpace", "InBound", "Arn"] ]
+  IntermediateBucket:
+    Value: !Ref 'IntermediateBucket'
+    Export:
+      Name: !Join [ ":", [ "S3", !Ref "NameSpace", "Intermediate", "Name" ] ]
+  InBoundBucket:
+    Value: !Ref 'InBoundBucket'
+    Export:
+      Name: !Join [ ":", [ "S3", !Ref "NameSpace", "InBound", "Name"] ]
+  SamResourcesBucket:
+    Value: !Ref 'SamResourcesBucket'
+    Export:
+      Name: !Join [ ":", [ "S3", !Ref "NameSpace", "SamResources", "Name" ] ]
+  SamResourcesBucketArn:
+    Value: !GetAtt SamResourcesBucket.Arn
+    Export:
+      Name: !Join [ ":", [ "S3", !Ref "NameSpace", "SamResources", "Arn" ] ]
