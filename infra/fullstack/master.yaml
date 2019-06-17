@@ -1,9 +1,9 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description:
+Description: Master template
 
 Parameters:
-  KeyPairName:
-    Type: String
+  KeyPair:
+    Type: AWS::EC2::KeyPair::KeyName
   AvailabilityZones:
     Type: List<AWS::EC2::AvailabilityZone::Name>
 
@@ -11,21 +11,19 @@ Resources:
   SubStrate:
     Type: AWS::CloudFormation::Stack
     Properties:
-      TemplateURL: !Sub 'https://TEMPLATE_BUCKET_NAME.s3.amazonaws.com/TEMPLATE_OBJECT_PREFIX/substrate.yaml'
+      TemplateURL: https://TEMPLATE_BUCKET_NAME.s3.amazonaws.com/TEMPLATE_OBJECT_PREFIX/substrate.yaml
       Parameters:
         AvailabilityZones: !Join
           - ','
           - !Ref 'AvailabilityZones'
-        KeyPairName: !Ref 'KeyPairName'
         NumberOfAZs: '2'
   Bastion:
     Type: AWS::CloudFormation::Stack
-    DependsOn:
-      - SubStrate
+    DependsOn: SubStrate
     Properties:
-      TemplateURL: '!Sub https://TEMPLATE_BUCKET_NAME.s3.amazonaws.com/TEMPLATE_OBJECT_PREFIX/bastion.yaml'
+      TemplateURL: https://TEMPLATE_BUCKET_NAME.s3.amazonaws.com/TEMPLATE_OBJECT_PREFIX/bastion.yaml
       Parameters:
-        KeyPairName: !Ref 'KeyPairName'
+        KeyPairName: !Ref 'KeyPair'
         VpcId: !GetAtt 'SubStrate.Outputs.VPC'
         PublicSubnet1Id: !GetAtt 'SubStrate.Outputs.PublicSubnet1ID'
         PublicSubnet2Id: !GetAtt 'SubStrate.Outputs.PublicSubnet2ID'
@@ -33,26 +31,40 @@ Resources:
   S3:
     Type: AWS::CloudFormation::Stack
     Properties:
-      TemplateURL: '!Sub https://TEMPLATE_BUCKET_NAME.s3.amazonaws.com/TEMPLATE_OBJECT_PREFIX/s3.yaml'
+      TemplateURL: https://TEMPLATE_BUCKET_NAME.s3.amazonaws.com/TEMPLATE_OBJECT_PREFIX/s3.yaml
   IAM:
     Type: AWS::CloudFormation::Stack
     DependsOn:
       - S3
     Properties:
-      TemplateURL: '!Sub https://TEMPLATE_BUCKET_NAME.s3.amazonaws.com/TEMPLATE_OBJECT_PREFIX/iam.yaml'
+      TemplateURL: https://TEMPLATE_BUCKET_NAME.s3.amazonaws.com/TEMPLATE_OBJECT_PREFIX/iam.yaml
       Parameters:
         InBoundBucketArn: !GetAtt 'S3.Outputs.InBoundBucketArn'
-#  ElasticSearch:
-#    Type: AWS::CloudFormation::Stack
-#    DependsOn:
-#      - SubStrate
-#      - S3
-#      - IAM
-#    Properties:
-#      TemplateURL: '!Sub https://TEMPLATE_BUCKET_NAME.s3.amazonaws.com/TEMPLATE_OBJECT_PREFIX/elastic-search.yaml'
-#  Logstash:
-#    Type: AWS::CloudFormation::Stack
-#    DependsOn:
-#      - ElasticSearch
-#    Properties:
-#      TemplateURL: '!Sub https://TEMPLATE_BUCKET_NAME.s3.amazonaws.com/TEMPLATE_OBJECT_PREFIX/logstash.yaml'
+  ElasticSearch:
+    Type: AWS::CloudFormation::Stack
+    DependsOn:
+      - IAM
+      - Bastion
+    Properties:
+      TemplateURL: https://TEMPLATE_BUCKET_NAME.s3.amazonaws.com/TEMPLATE_OBJECT_PREFIX/elastic-search.yaml
+      Parameters:
+        VpcId: !GetAtt 'SubStrate.Outputs.VPC'
+        PrivateSubnet1Id: !GetAtt 'SubStrate.Outputs.PrivateSubnet1ID'
+        PrivateSubnet2Id: !GetAtt 'SubStrate.Outputs.PrivateSubnet2ID'
+        BastionSecurityGroup: !GetAtt 'Bastion.Outputs.BastionSecurityGroupID'
+        LogstashHostRoleArn: !GetAtt 'IAM.Outputs.LogstashHostRoleArn'
+  Logstash:
+    Type: AWS::CloudFormation::Stack
+    DependsOn:
+      - ElasticSearch
+    Properties:
+      TemplateURL: https://TEMPLATE_BUCKET_NAME.s3.amazonaws.com/TEMPLATE_OBJECT_PREFIX/logstash.yaml
+      Parameters:
+        KeyPairName: !Ref 'KeyPair'
+        VpcId: !GetAtt 'SubStrate.Outputs.VPC'
+        LogstashHostProfileArn: !GetAtt 'IAM.Outputs.LogstashHostProfileArn'
+        PrivateSubnet1Id: !GetAtt 'SubStrate.Outputs.PrivateSubnet1ID'
+        BastionSecurityGroup: !GetAtt 'Bastion.Outputs.BastionSecurityGroupID'
+        ElasticSearchSecurityGroup: !GetAtt 'ElasticSearch.Outputs.ElasticSearchSecurityGroup'
+        InBoundBucketArn: !GetAtt 'S3.Outputs.InBoundBucketArn'
+        ElasticSearchDomainEndpoint: !GetAtt 'ElasticSearch.Outputs.ElasticSearchHost'

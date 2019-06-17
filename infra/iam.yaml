@@ -62,7 +62,6 @@ Resources:
       Path: /
 
 Outputs:
-  BatchJobRoleName:
   LogstashHostRoleName:
     Value: !Ref 'LogstashHostRole'
     Export:

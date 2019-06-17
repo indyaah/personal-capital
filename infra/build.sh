@@ -10,7 +10,7 @@ function usage() {
     echo -e "--push \t Enable or Disable template pushing template to bucket of your choice."
     echo -e "--deploy \t Create new stack"
     echo -e "--key-name \t KeyPair Name from AWS that can be attached with bastion/logstash instances."
-    echo -e "--az \t List of two AZs in with comma double escaped. e.g 'us-west-2a\\,us-west-2b'"
+    echo -e "--az \t List of two AZs in with comma double escaped. e.g 'us-west-2a,us-west-2b'"
 
 }
 
@@ -72,11 +72,23 @@ function push() {
 }
 
 function deploy() {
+    ESCAPED_AZ=$(echo ${AZ} | sed 's/,/\\,/g')
     aws cloudformation create-stack \
-        --region us-west-2 --stack-name ${FINAL_STACK_NAME} \
-        --template-url "https://$TEMPLATE_BUCKET_NAME.s3.amazonaws.com/$COMMIT_HASH/bastion.yaml" \
-        --parameters "ParameterKey=AvailabilityZones,ParameterValue=${AZ},ParameterKey=KeyPairName,ParameterValue=${KEY_PAIR_NAME}" \
-        --capabilities CAPABILITY_IAM
+        --region $1 \
+        --stack-name ${FINAL_STACK_NAME} \
+        --template-url "https://$TEMPLATE_BUCKET_NAME.s3.amazonaws.com/$COMMIT_HASH/master.yaml" \
+        --parameters "ParameterKey=AvailabilityZones,ParameterValue=$ESCAPED_AZ" "ParameterKey=KeyPair,ParameterValue=$KEY_PAIR_NAME" \
+        --capabilities CAPABILITY_IAM CAPABILITY_AUTO_EXPAND
+}
+
+function update() {
+    ESCAPED_AZ=$(echo ${AZ} | sed 's/,/\\,/g')
+    aws cloudformation update-stack \
+        --region $1 \
+        --stack-name ${FINAL_STACK_NAME} \
+        --template-url "https://$TEMPLATE_BUCKET_NAME.s3.amazonaws.com/$COMMIT_HASH/master.yaml" \
+        --parameters "ParameterKey=AvailabilityZones,ParameterValue=$ESCAPED_AZ" "ParameterKey=KeyPair,ParameterValue=$KEY_PAIR_NAME" \
+        --capabilities CAPABILITY_IAM CAPABILITY_AUTO_EXPAND
 }
 
 if [[ ${PUSH_TO_S3} == "true" ]]; then
@@ -95,8 +107,17 @@ if [[ ${DEPLOY_STACK} == "true" ]]; then
         usage
         exit 1
     fi
-   build
-   push
-   deploy
-fi
+   AWS_REGION=$(echo "us-west-2a,us-west-2b" | cut -d',' -f1 | sed 's/.$//')
+   echo "Using AWS Region : $AWS_REGION based on AZs"
 
+   STACK_EXISTS=$(aws cloudformation describe-stacks --stack-name ${FINAL_STACK_NAME} | jq -r '.Stacks[].StackName')
+   RESULT=$?
+    if [ $RESULT -eq 0 ]; then
+        update $AWS_REGION
+    else
+        deploy $AWS_REGION
+    fi
+
+
+
+fi
