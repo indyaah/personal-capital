@@ -28,7 +28,10 @@ Parameters:
   ElasticSearchDomainEndpoint:
     Type: String
     Description: VPC Endpoint for ElasticSearch Service
-
+  IndexName:
+    Type: String
+    Description: ElasticSeach Index name
+    Default: plans
 Mappings:
   AWSAMIRegionMap:
     us-east-1:
@@ -132,7 +135,9 @@ Resources:
                     - "     region => \""
                     - !Ref 'AWS::Region'
                     - "\"\n"
-                    - "     index => \"plans\"\n"
+                    - "     index => \""
+                    - !Ref 'IndexName'
+                    - "\"\n"
                     - "   }\n"
                     - "  }\n"
               mode: '640'
@@ -245,3 +250,5 @@ Outputs:
     Value: !Ref 'LogstashSecurityGroup'
     Export:
       Name: !Join [ ":", [ "Logstash", !Ref "NameSpace", "LogstashSecurityGroup"] ]
+  IndexName:
+    Value: !Ref 'IndexName'
