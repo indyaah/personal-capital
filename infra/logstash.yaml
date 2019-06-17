@@ -22,7 +22,7 @@ Parameters:
   ElasticSearchSecurityGroup:
     Type: String
     Description: Security Group for ElasticSearch
-  InBoundBucketArn:
+  InBoundBucketName:
     Type: String
     Description: Bucket where the files would appear for ingestion
   ElasticSearchDomainEndpoint:
@@ -74,14 +74,15 @@ Resources:
             stop_logstash:
               command: initctl stop logstash
               ignoreErrors: true
-            stop_startstash:
-              command: initctl stop logstash
+            start_logstash:
+              command: initctl start logstash
               ignoreErrors: true
         SetupLogstashService:
-          setup_log_stash:
-            command: /usr/share/logstash/bin/system-install
-          setup_logs_stash_plugin:
-            command: sudo -E /usr/share/logstash/bin/logstash-plugin install logstash-output-amazon_es
+          commands:
+            setup_log_stash:
+              command: /usr/share/logstash/bin/system-install
+            setup_logs_stash_plugin:
+              command: sudo -E /usr/share/logstash/bin/logstash-plugin install logstash-output-amazon_es
         ConfigureYum:
           files:
             /etc/yum.repos.d/logstash.repo:
@@ -112,7 +113,7 @@ Resources:
                   - - "input {\n"
                     - "    s3 {\n"
                     - "      \"bucket\" => \""
-                    - !Ref 'InBoundBucketArn'
+                    - !Ref 'InBoundBucketName'
                     - "\"\n"
                     - "    }\n"
                     - " }\n"

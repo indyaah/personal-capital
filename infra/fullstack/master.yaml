@@ -66,5 +66,5 @@ Resources:
         PrivateSubnet1Id: !GetAtt 'SubStrate.Outputs.PrivateSubnet1ID'
         BastionSecurityGroup: !GetAtt 'Bastion.Outputs.BastionSecurityGroupID'
         ElasticSearchSecurityGroup: !GetAtt 'ElasticSearch.Outputs.ElasticSearchSecurityGroup'
-        InBoundBucketArn: !GetAtt 'S3.Outputs.InBoundBucketArn'
+        InBoundBucketName: !GetAtt 'S3.Outputs.InBoundBucket'
         ElasticSearchDomainEndpoint: !GetAtt 'ElasticSearch.Outputs.ElasticSearchHost'
