@@ -218,7 +218,7 @@ Resources:
         - IpProtocol: tcp
           FromPort: 22
           ToPort: 22
-          SecurityGroupId: !Ref 'BastionSecurityGroup'
+          SourceSecurityGroupId: !Ref 'BastionSecurityGroup'
         - IpProtocol: icmp
           FromPort: -1
           ToPort: -1
