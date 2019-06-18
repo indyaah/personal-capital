@@ -12,7 +12,7 @@ Globals:
     Environment: # More info about Env Vars: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#environment-object
       Variables:
         INDEX_NAME: plans
-        ES_HOST: "vpc-personal-capital-plans-goi2vse4zllq7m7hp7dzpm6ejm.us-west-2.es.amazonaws.com"
+        ES_HOST: "vpc-api-gateway-plans-goi2vse4zllq7m7hp7dzpm6ejm.us-west-2.es.amazonaws.com"
         ES_PORT: 443
         ES_PROTOCOL: https
 
@@ -20,7 +20,7 @@ Resources:
   FindByPlanName:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: target/personal-capital-1.0.0.jar
+      CodeUri: api-gateway/target/api-gateway-1.0.0.jar
       Runtime: java8
       Handler: pro.anuj.challenge.pc.api.PlanNameSearchHandler::handleRequest
       Events:
@@ -32,7 +32,7 @@ Resources:
   FindBySponsorName:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: target/personal-capital-1.0.0.jar
+      CodeUri: api-gateway/target/api-gateway-1.0.0.jar
       Runtime: java8
       Handler: pro.anuj.challenge.pc.api.SponsorNameSearchHandler::handleRequest
       Events:
@@ -44,7 +44,7 @@ Resources:
   FindBySponsorState:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: target/personal-capital-1.0.0.jar
+      CodeUri: api-gateway/target/api-gateway-1.0.0.jar
       Runtime: java8
       Handler: pro.anuj.challenge.pc.api.SponsorStateSearchHandler::handleRequest
       Events:
