@@ -16,6 +16,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
+@SuppressWarnings("FieldCanBeLocal")
 abstract class StreamHandler implements RequestHandler<Map<String, Object>, Response> {
     private static final int SC_OK = 200;
     private static int SC_BAD_REQUEST = 400;
@@ -50,14 +51,6 @@ abstract class StreamHandler implements RequestHandler<Map<String, Object>, Resp
             List<Map<String, Object>> results = service.executeQuery(queryParams.get("q"), terms);
             return new Response<>(objectMapper.writeValueAsString(results), APPLICATION_JSON, SC_OK);
         } catch (IOException e) {
-            System.out.println("--------------------------");
-            System.out.println(config.getHost());
-            System.out.println("--------------------------");
-            System.out.println(config.getPort());
-            System.out.println("--------------------------");
-            System.out.println(config.getProtocol());
-            System.out.println("--------------------------");
-            e.printStackTrace();
             return handleError("Internal Server Error", SC_INTERNAL_ERROR);
         }
     }
